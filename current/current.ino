@@ -1,132 +1,178 @@
-// ─────────────────────────────────────────────────────────────
-//  PowerGuard ESP32 — DEBUG VERSION
-//  Prints raw ADC counts, baseline, and offset so we can see
-//  exactly why S1/S2 are non-zero with no load.
-// ─────────────────────────────────────────────────────────────
-
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
 
-#define BUZZER_PIN   14
-#define BAUD_RATE    115200
-#define SAMPLES      80
-#define CAL_SAMPLES  400
+#define BUZZER_PIN      14
+#define BAUD_RATE       115200
 
-// ── Noise clamp in ADC counts ─────────────────────────────────
-// ACS712 5A + ADS1115 GAIN_ONE: 1 count = 0.125 mV
-// Real signal from a 100W bulb at 230V:
-//   I_rms = 100W/230V = 435 mA
-//   Sensor output swing = 435mA × 185mV/A = 80mV RMS
-//   In counts = 80mV / 0.125mV = 640 counts RMS
-//   Peak amplitude = 640 × √2 ≈ 905 counts
-// So NOISE_CLAMP must be < 905 to let real signal through,
-// but high enough to kill noise. Start at 200 and tune up if
-// you still see false readings with no load.
-#define NOISE_CLAMP  200
+// ── Sampling ──────────────────────────────────────────────────
+// 80 samples × 800 µs ≈ 64 ms = 3.2 cycles at 50 Hz
+#define SAMPLES         80
+#define CAL_SAMPLES     400
+
+// ── Sensor calibration ────────────────────────────────────────
+// ACS712-5A output sensitivity: 185 mV/A
+// ADS1115 GAIN_ONE:            0.125 mV per count
+// Net counts per Ampere:       185 / 0.125 = 1480.0
+#define COUNTS_PER_AMP  1480.0f
+
+// ── Mains voltage (RMS) ───────────────────────────────────────
+// India / EU: 230 V
+#define MAINS_VOLTS     230.0f
+
+// ── Noise floor ───────────────────────────────────────────────
+// Minimum current (mA) to be reported as a real load.
+#define MIN_CURRENT_MA  50.0f
+
+// ── S2 trim ──────────────────────────────────────────────────
+// Compensates for baseline mismatch between the two ACS712 sensors.
+// If S2 > S1 in normal (no-theft) state, increase in steps of 10
+// until S1 ≈ S2 with no theft load connected. Start at 20.0.
+#define S2_TRIM_MA      20.0f
+
+// ── Channel assignment ────────────────────────────────────────
+// ACS712 #1 (TOTAL current)  → ADS1115 A0
+// ACS712 #2 (LEGAL current)  → ADS1115 A1
+#define CH_TOTAL        0
+#define CH_LEGAL        1
+
+// ── WDT yield interval ───────────────────────────────────────
+// Call yield() every N samples inside long loops to feed the
+// ESP8266 watchdog. 50 samples × ~2.3 ms ≈ 115 ms — well under
+// the ~3.2 s WDT timeout and safe for WiFi background tasks.
+#define YIELD_EVERY     50
 
 Adafruit_ADS1115 ads;
-float baseline1 = 0.0;
-float baseline2 = 0.0;
+float baseline_total = 0.0f;
+float baseline_legal = 0.0f;
 
 // ─────────────────────────────────────────────────────────────
 void calibrateBaseline() {
   Serial.println("CAL:STARTED");
 
-  // Warmup
+  // Warmup — let ADC internal reference settle.
+  // yield() every 10 iterations keeps WDT happy.
   for (int i = 0; i < 50; i++) {
-    ads.readADC_SingleEnded(0);
-    ads.readADC_SingleEnded(1);
-    if (i % 10 == 0) Serial.println("CAL:WARMUP");
+    ads.readADC_SingleEnded(CH_TOTAL);
+    ads.readADC_SingleEnded(CH_LEGAL);
+    if (i % 10 == 0) {
+      Serial.println("CAL:WARMUP");
+      yield();   // ← FIX: feed WDT during warmup
+    }
     delay(5);
   }
 
-  // Print a few raw samples so we can see the actual ADC values
+  // Print raw samples to verify ADC midpoint (~18960 counts = 2.5 V at GAIN_ONE)
   Serial.println("DBG:RAW_SAMPLES_BEFORE_CAL");
   for (int i = 0; i < 5; i++) {
-    int16_t r0 = ads.readADC_SingleEnded(0);
-    int16_t r1 = ads.readADC_SingleEnded(1);
-    Serial.print("DBG:RAW,ch0="); Serial.print(r0);
-    Serial.print(",ch1="); Serial.println(r1);
+    int16_t r0 = ads.readADC_SingleEnded(CH_TOTAL);
+    int16_t r1 = ads.readADC_SingleEnded(CH_LEGAL);
+    Serial.print("DBG:RAW,ch_total="); Serial.print(r0);
+    Serial.print(",ch_legal=");        Serial.println(r1);
     delay(10);
   }
 
-  double sum1 = 0, sum2 = 0;
+  // Calibrate CH_TOTAL in its own loop (separate loops prevent
+  // phase-offset error that made S2 > S1 in normal state).
+  // yield() every YIELD_EVERY samples feeds the WDT.
+  double sum_total = 0;
   for (int i = 0; i < CAL_SAMPLES; i++) {
-    sum1 += ads.readADC_SingleEnded(1);
-    sum2 += ads.readADC_SingleEnded(0);
-    delay(2);
+    sum_total += ads.readADC_SingleEnded(CH_TOTAL);
+    delayMicroseconds(1200);
+    if (i % YIELD_EVERY == 0) yield();   // ← FIX: feed WDT
   }
+  baseline_total = (float)(sum_total / CAL_SAMPLES);
 
-  baseline1 = sum1 / CAL_SAMPLES;
-  baseline2 = sum2 / CAL_SAMPLES;
+  // Calibrate CH_LEGAL in its own loop
+  double sum_legal = 0;
+  for (int i = 0; i < CAL_SAMPLES; i++) {
+    sum_legal += ads.readADC_SingleEnded(CH_LEGAL);
+    delayMicroseconds(1200);
+    if (i % YIELD_EVERY == 0) yield();   // ← FIX: feed WDT
+  }
+  baseline_legal = (float)(sum_legal / CAL_SAMPLES);
 
-  // ── DEBUG: print baseline counts and their voltage equivalents ──
-  // Expected: baseline should be near 20000 counts (= 2.5V at GAIN_ONE)
-  // If you see very different values (e.g. 16000 or 24000), the sensor
-  // DC output is shifted — check 5V supply and ACS712 wiring.
-  Serial.print("DBG:BASELINE_COUNTS,b1=");
-  Serial.print(baseline1, 1);
-  Serial.print(",b2=");
-  Serial.println(baseline2, 1);
+  Serial.print("DBG:BASELINE_COUNTS,total=");
+  Serial.print(baseline_total, 1);
+  Serial.print(",legal=");
+  Serial.println(baseline_legal, 1);
 
-  float v1 = baseline1 * 0.125 / 1000.0;
-  float v2 = baseline2 * 0.125 / 1000.0;
-  Serial.print("DBG:BASELINE_VOLTS,v1=");
-  Serial.print(v1, 3);
-  Serial.print("V,v2=");
-  Serial.print(v2, 3);
-  Serial.println("V  (expected ~2.500V each)");
+  float v_total = baseline_total * 0.125f / 1000.0f;
+  float v_legal = baseline_legal * 0.125f / 1000.0f;
+  Serial.print("DBG:BASELINE_VOLTS,total=");
+  Serial.print(v_total, 3);
+  Serial.print("V,legal=");
+  Serial.print(v_legal, 3);
+  Serial.println("V  (expected ~2.500 V each)");
 
-  Serial.print("CAL:BASELINE,");
-  Serial.print(baseline1, 2);
-  Serial.print(",");
-  Serial.println(baseline2, 2);
+  Serial.print("CAL:BASELINE,total=");
+  Serial.print(baseline_total, 2);
+  Serial.print(",legal=");
+  Serial.println(baseline_legal, 2);
 }
 
 // ─────────────────────────────────────────────────────────────
 void readAndSend() {
-  double sq1 = 0, sq2 = 0;
-
-  // Also track max deviation seen this batch for debug
-  float maxDev1 = 0, maxDev2 = 0;
+  double sq_total = 0, sq_legal = 0;
+  float maxDev_total = 0, maxDev_legal = 0;
 
   for (int i = 0; i < SAMPLES; i++) {
-    float v1 = ads.readADC_SingleEnded(1) - baseline1;
-    float v2 = ads.readADC_SingleEnded(0) - baseline2;
+    float v_total = (float)ads.readADC_SingleEnded(CH_TOTAL) - baseline_total;
+    float v_legal = (float)ads.readADC_SingleEnded(CH_LEGAL) - baseline_legal;
 
-    // Track max deviation (before clamp) to help tune NOISE_CLAMP
-    if (abs(v1) > maxDev1) maxDev1 = abs(v1);
-    if (abs(v2) > maxDev2) maxDev2 = abs(v2);
+    if (fabsf(v_total) > maxDev_total) maxDev_total = fabsf(v_total);
+    if (fabsf(v_legal) > maxDev_legal) maxDev_legal = fabsf(v_legal);
 
-    if (abs(v1) < NOISE_CLAMP) v1 = 0;
-    if (abs(v2) < NOISE_CLAMP) v2 = 0;
+    sq_total += (double)v_total * v_total;
+    sq_legal += (double)v_legal * v_legal;
 
-    sq1 += v1 * v1;
-    sq2 += v2 * v2;
     delayMicroseconds(800);
+    // readAndSend() runs in ~64 ms total — no yield needed here.
+    // If you raise SAMPLES above ~200, add yield() here too.
   }
 
-  float rms1 = sqrt(sq1 / SAMPLES);
-  float rms2 = sqrt(sq2 / SAMPLES);
+  // RMS counts → Amps → milliamps
+  float rms_counts_total = sqrtf((float)(sq_total / SAMPLES));
+  float rms_counts_legal = sqrtf((float)(sq_legal / SAMPLES));
 
+  float current_total_mA = (rms_counts_total / COUNTS_PER_AMP) * 1000.0f;
+  float current_legal_mA = (rms_counts_legal / COUNTS_PER_AMP) * 1000.0f;
+
+  // Noise floor
+  if (current_total_mA < MIN_CURRENT_MA) current_total_mA = 0.0f;
+  if (current_legal_mA < MIN_CURRENT_MA) current_legal_mA = 0.0f;
+
+  // S2 trim — cancel residual baseline offset
+  current_legal_mA = max(0.0f, current_legal_mA - S2_TRIM_MA);
+
+  // Apparent power (unity power factor assumed)
+  float watts_total = current_total_mA / 1000.0f * MAINS_VOLTS;
+  float watts_legal = current_legal_mA / 1000.0f * MAINS_VOLTS;
+
+  // Theft current = total − legal (clamped to 0)
+  float theft_mA = max(0.0f, current_total_mA - current_legal_mA);
+  float theft_W  = theft_mA / 1000.0f * MAINS_VOLTS;
+
+  Serial.print("DATA,s1_mA=");   Serial.print(current_total_mA, 1);
+  Serial.print(",s2_mA=");       Serial.print(current_legal_mA, 1);
+  Serial.print(",s1_W=");        Serial.print(watts_total, 1);
+  Serial.print(",s2_W=");        Serial.print(watts_legal, 1);
+  Serial.print(",theft_mA=");    Serial.print(theft_mA, 1);
+  Serial.print(",theft_W=");     Serial.println(theft_W, 1);
+
+  // Legacy RAW line for backward compatibility
   Serial.print("RAW,");
-  Serial.print(rms1, 2);
+  Serial.print(rms_counts_total, 2);
   Serial.print(",");
-  Serial.println(rms2, 2);
+  Serial.println(rms_counts_legal, 2);
 
-  // Every 10 readings print a debug line showing max deviations
-  // This tells you the ACTUAL noise amplitude vs NOISE_CLAMP=200
-  // If maxDev1 > 200 with no load, raise NOISE_CLAMP
-  // If maxDev1 < 200 with load on, lower NOISE_CLAMP
+  // Debug peak deviation every 10 readings
   static int dbgCount = 0;
   if (++dbgCount >= 10) {
     dbgCount = 0;
-    Serial.print("DBG:MAX_DEV,d1=");
-    Serial.print(maxDev1, 0);
-    Serial.print(",d2=");
-    Serial.print(maxDev2, 0);
-    Serial.print("  NOISE_CLAMP=");
-    Serial.println(NOISE_CLAMP);
+    Serial.print("DBG:MAX_DEV,total="); Serial.print(maxDev_total, 0);
+    Serial.print(",legal=");            Serial.print(maxDev_legal, 0);
+    Serial.print("  MIN_CURRENT_MA=");  Serial.print(MIN_CURRENT_MA);
+    Serial.print("  S2_TRIM_MA=");      Serial.println(S2_TRIM_MA);
   }
 }
 
@@ -164,7 +210,7 @@ void setup() {
   for (int i = 5; i > 0; i--) {
     Serial.print("CAL:COUNTDOWN,");
     Serial.println(i);
-    delay(1000);
+    delay(1000);   // delay() feeds WDT internally — safe
   }
 
   calibrateBaseline();
@@ -175,4 +221,5 @@ void setup() {
 void loop() {
   handleCommands();
   readAndSend();
+  yield();   // ← give ESP8266 background tasks a slice every loop
 }

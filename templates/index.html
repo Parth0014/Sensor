@@ -428,12 +428,8 @@
             <div class="card-val" id="delta">-</div>
           </div>
           <div class="card">
-            <div class="card-label">Noise Floor</div>
-            <div class="card-val" id="noisefloor">-</div>
-          </div>
-          <div class="card">
             <div class="card-label">Alarm Threshold</div>
-            <div class="card-val muted">200</div>
+            <div class="card-val muted">50</div>
           </div>
           <div class="card">
             <div class="card-label">Status</div>
@@ -706,10 +702,6 @@
           document.getElementById("s2b").textContent = d.s2;
           document.getElementById("deltab").textContent = d.delta;
           document.getElementById("statusb").textContent = d.status;
-          if (document.getElementById("noisefloor")) {
-            const nf = await fetch("/api/state").then((r) => r.json());
-            document.getElementById("noisefloor").textContent = nf.noise_floor;
-          }
           const isAlarm = d.status === "ALARM";
           if (isAlarm !== (lastStatus === "ALARM")) {
             setAlarmState(isAlarm);

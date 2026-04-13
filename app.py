@@ -9,21 +9,22 @@ from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 
 # ── Config ────────────────────────────────────────────────────
-SENSITIVITY     = 0.185   # ACS712 5A  (V/A)
-ADC_LSB_mV      = 0.125   # ADS1115 GAIN_ONE (mV/LSB)
-ALARM_MA        = 200     # stolen mA threshold to trigger alarm
+# REMOVED: adc_to_ma() conversion — the firmware now does it.
+#          Python receives milliamps directly on the DATA line.
+#
+# CHANGED: NOISE_FLOOR_MA 150 → 50
+#          Must match firmware MIN_CURRENT_MA (default 50).
+#          The old 150 mA floor was silently zeroing real small loads.
+ALARM_MA        = 50     # stolen mA threshold to trigger alarm
 ALARM_HITS      = 3       # consecutive reads above threshold to arm alarm
 CLEAR_HITS      = 5       # consecutive reads below threshold to clear alarm
-NOISE_FLOOR_MA  = 150.0   # deadzone — below this is sensor noise, not real current
+NOISE_FLOOR_MA  = 50.0    # ignore readings below this (matches firmware MIN_CURRENT_MA)
 BAUD_RATE       = 115200
-
-def adc_to_ma(rms_adc):
-    v = rms_adc * ADC_LSB_mV / 1000.0
-    return (v / SENSITIVITY) * 1000.0
 
 # ── Shared state ──────────────────────────────────────────────
 state = {
     "s1": 0, "s2": 0, "delta": 0,
+    "s1_W": 0.0, "s2_W": 0.0,
     "status": "INIT",
     "connected": False,
     "last_update": 0.0,
@@ -32,20 +33,41 @@ state = {
 lock = threading.Lock()
 _ser = None
 
-# ── Moving average buffers ────────────────────────────────────
+# ── Moving average buffers ─────────────────────────────────────
 _ma1 = deque([0.0] * 8, maxlen=8)
 _ma2 = deque([0.0] * 8, maxlen=8)
-
+_s2_zero_start_time = None  # Track when S2 first becomes 0
 # ─────────────────────────────────────────────────────────────
-def process(rms1, rms2):
-    _ma1.append(rms1)
-    _ma2.append(rms2)
+def process(s1_ma: float, s2_ma: float, s1_w: float = 0.0, s2_w: float = 0.0):
+    """
+    Accept already-converted milliamp values from the DATA line.
+    Moving average still applied here for stability.
+    """
+    global _s2_zero_start_time
+    
+    _ma1.append(s1_ma)
+    _ma2.append(s2_ma)
 
-    s1 = adc_to_ma(sum(_ma1) / len(_ma1))
-    s2 = adc_to_ma(sum(_ma2) / len(_ma2))
+    s1 = sum(_ma1) / len(_ma1)
+    s2 = sum(_ma2) / len(_ma2)
 
+    # Soft floor matches firmware MIN_CURRENT_MA — anything below is noise
     s1 = s1 if s1 >= NOISE_FLOOR_MA else 0.0
     s2 = s2 if s2 >= NOISE_FLOOR_MA else 0.0
+
+    # Sanity check: if S1 (total current) is 0, S2 (legal current) must also be 0
+    # This prevents noise / sensor touches from showing fake readings
+    if s1 == 0.0:
+        s2 = 0.0
+
+    # Track if S2 = 0 for 7+ seconds — if so, zero S1 too (sensor malfunction)
+    if s2 == 0.0:
+        if _s2_zero_start_time is None:
+            _s2_zero_start_time = time.time()  # Mark when S2 first became 0
+        elif time.time() - _s2_zero_start_time >= 7.0:
+            s1 = 0.0  # If S2 has been 0 for 7+ seconds, something is wrong
+    else:
+        _s2_zero_start_time = None  # Reset when S2 is non-zero
 
     delta = max(0, int(s1) - int(s2))
     theft = (delta >= ALARM_MA) and (s1 >= NOISE_FLOOR_MA)
@@ -53,6 +75,8 @@ def process(rms1, rms2):
     with lock:
         state["s1"]          = int(s1)
         state["s2"]          = int(s2)
+        state["s1_W"]        = round(s1_w, 1)
+        state["s2_W"]        = round(s2_w, 1)
         state["delta"]       = delta
         state["last_update"] = time.time()
         state["history"].append({
@@ -85,7 +109,8 @@ def process(rms1, rms2):
             else:
                 state["_oc"] = 0
 
-    print(f"S1={int(s1):5d}mA  S2={int(s2):5d}mA  Δ={delta:5d}mA  [{state['status']}]")
+    print(f"S1={int(s1):5d}mA ({s1_w:6.1f}W)  S2={int(s2):5d}mA ({s2_w:6.1f}W)  Δ={delta:5d}mA  [{state['status']}]")
+
 
 def _buzz(on: bool):
     try:
@@ -93,6 +118,25 @@ def _buzz(on: bool):
             _ser.write(b"BUZZ:1\n" if on else b"BUZZ:0\n")
     except Exception as e:
         print(f"[WARN] buzz: {e}")
+
+
+def _parse_data_line(line: str):
+    """
+    Parse new-format DATA line from firmware:
+        DATA,s1_mA=435.0,s2_mA=0.0,s1_W=100.1,s2_W=0.0
+
+    Returns (s1_mA, s2_mA, s1_W, s2_W) floats or None on parse error.
+    """
+    try:
+        kv = {}
+        for part in line[5:].split(","):   # skip leading "DATA,"
+            k, v = part.split("=")
+            kv[k.strip()] = float(v.strip())
+        return kv["s1_mA"], kv["s2_mA"], kv.get("s1_W", 0.0), kv.get("s2_W", 0.0)
+    except Exception as e:
+        print(f"[PARSE_ERROR] Failed to parse line: {repr(line)} — {e}")
+        return None
+
 
 # ── Serial reader thread ──────────────────────────────────────
 def serial_thread(port):
@@ -102,20 +146,12 @@ def serial_thread(port):
     while True:
         try:
             print(f"[SERIAL] Connecting to {port} ...")
-
-            # dsrdtr/rtscts=False → prevents DTR asserting and resetting the ESP32
             ser = serial.Serial(
                 port,
                 BAUD_RATE,
                 dsrdtr  = False,
                 rtscts  = False,
-                # FIX: timeout raised from 2s → 30s
-                # During calibration the ESP32 is silent for up to ~8 seconds
-                # (5s countdown + warmup + 400 samples).
-                # With timeout=2, pyserial's readline() returned b'' after 2s,
-                # causing the for-loop iterator to exit and triggering a
-                # reconnect/reset loop. 30s comfortably covers any silence.
-                timeout = 30,
+                timeout = 30,   # must cover 5s countdown + ~8s calibration silence
             )
             ser.dtr = False
             ser.rts = False
@@ -127,21 +163,15 @@ def serial_thread(port):
                 state["connected"] = True
                 state["status"]    = "CAL"
 
-            # Flush ESP32 boot ROM garbage (prints at 74880 baud → mojibake at 115200)
+            # Flush ESP32 boot ROM garbage
             time.sleep(0.5)
             ser.reset_input_buffer()
-            print("[SERIAL] Connected. Boot garbage flushed — waiting for CAL...")
+            print("[SERIAL] Connected — waiting for CAL...")
 
-            # FIX: replaced  `for line in ser`  with a manual while loop.
-            # The for-loop iterator calls readline() and raises StopIteration
-            # on any empty return (timeout). Our manual loop just continues,
-            # keeping the connection alive through long calibration silences.
             while ser.is_open:
                 raw = ser.readline()
-
-                # Empty bytes = readline timed out — just keep waiting
                 if not raw:
-                    continue
+                    continue    # readline timed out — keep waiting
 
                 line = raw.decode("utf-8", errors="replace").strip()
                 if not line:
@@ -149,6 +179,7 @@ def serial_thread(port):
 
                 print(f"[ESP] {line}")
 
+                # ── Calibration handshake ──────────────────────
                 if line.startswith("CAL:BASELINE,"):
                     parts = line.split(",")
                     if len(parts) == 3:
@@ -159,11 +190,34 @@ def serial_thread(port):
                     with lock:
                         state["status"] = "OK"
 
+                # ── Primary: new DATA line (mA + W already computed) ──
+                elif line.startswith("DATA,") and calibrated:
+                    result = _parse_data_line(line)
+                    if result:
+                        process(*result)
+                        if state["status"] == "CAL":
+                            with lock:
+                                state["status"] = "OK"
+                
+                elif line.startswith("DATA,") and not calibrated:
+                    print("[DEBUG] DATA line received but not calibrated yet — ignoring")
+
+                # ── Fallback: legacy RAW line (ADC counts) ─────────────
+                # Kept so the server still works if you flash older firmware.
+                # If the firmware is up-to-date, this branch is never hit
+                # because the DATA line always appears first on the same loop.
                 elif line.startswith("RAW,") and calibrated:
                     parts = line.split(",")
                     if len(parts) >= 3:
                         try:
-                            process(float(parts[1]), float(parts[2]))
+                            # Convert ADC counts → mA the old way
+                            ADC_LSB_mV  = 0.125
+                            SENSITIVITY = 0.185
+                            def _adc_to_ma(c):
+                                return (c * ADC_LSB_mV / 1000.0 / SENSITIVITY) * 1000.0
+                            s1 = _adc_to_ma(float(parts[1]))
+                            s2 = _adc_to_ma(float(parts[2]))
+                            process(s1, s2)
                             if state["status"] == "CAL":
                                 with lock:
                                     state["status"] = "OK"
@@ -184,6 +238,7 @@ def serial_thread(port):
             except Exception:
                 pass
             _ser = None
+
 
 # ── Flask app ─────────────────────────────────────────────────
 app = Flask(__name__, template_folder="templates")
@@ -220,7 +275,8 @@ def api_buzz(on):
     _buzz(bool(on))
     return jsonify({"ok": True})
 
-# ── Serial port auto-detection ────────────────────────────────
+
+# ── Serial port auto-detection ─────────────────────────────────
 def auto_port():
     keywords = ["CH340", "CP210", "USB Serial", "UART", "ESP", "usbserial", "ttyUSB"]
     for p in serial.tools.list_ports.comports():
@@ -229,6 +285,7 @@ def auto_port():
             return p.device
     ports = serial.tools.list_ports.comports()
     return ports[0].device if ports else None
+
 
 # ── Entry point ───────────────────────────────────────────────
 if __name__ == "__main__":
