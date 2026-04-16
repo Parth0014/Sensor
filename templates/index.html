@@ -1,744 +1,714 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PowerGuard | ACS712 Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap"
-      rel="stylesheet"
-    />
-    <style>
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-      html,
-      body {
-        overflow: hidden;
-        width: 100vw;
-        height: 100vh;
-      }
-      .pg-root {
-        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-        background: #0f172a;
-        color: #f8fafc;
-        width: 100vw;
-        height: 100vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-      }
-      header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 10px 24px;
-        background: #0f172a;
-        border-bottom: 3px solid #000;
-        flex-shrink: 0;
-      }
-      .logo {
-        font-size: 18px;
-        font-weight: 800;
-        color: #fff;
-        letter-spacing: -0.5px;
-        text-transform: uppercase;
-      }
-      .status-pill {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: #1e293b;
-        border: 2px solid #000;
-        border-radius: 999px;
-        padding: 5px 14px;
-        font-size: 10px;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-      .sdot {
-        width: 9px;
-        height: 9px;
-        border-radius: 50%;
-        border: 1px solid #000;
-        background: #4ade80;
-      }
-      main {
-        flex: 1;
-        display: grid;
-        grid-template-rows: auto auto 1fr auto;
-        gap: 12px;
-        padding: 12px 24px;
-        overflow: hidden;
-        min-height: 0;
-      }
-      #banner {
-        border: 3px solid #000;
-        border-radius: 10px;
-        padding: 12px 18px;
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        font-weight: 800;
-        font-size: 13px;
-        box-shadow: 5px 5px 0 #000;
-        transition:
-          background 0.4s,
-          color 0.4s;
-      }
-      #banner.ok {
-        background: #bbf7d0;
-        color: #14532d;
-      }
-      #banner.alarm {
-        background: #fca5a5;
-        color: #7f1d1d;
-      }
-      .icon-circle {
-        width: 38px;
-        height: 38px;
-        border-radius: 50%;
-        border: 2px solid #000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        transition: background 0.4s;
-      }
-      .icon-circle.ok {
-        background: #4ade80;
-      }
-      .icon-circle.alarm {
-        background: #ef4444;
-      }
-      .cards {
-        display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        gap: 10px;
-      }
-      .card {
-        background: #fff;
-        border: 3px solid #000;
-        border-radius: 10px;
-        padding: 12px 16px;
-        box-shadow: 3px 3px 0 #000;
-        color: #0f172a;
-      }
-      .card-label {
-        font-size: 9px;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #64748b;
-        margin-bottom: 4px;
-      }
-      .card-val {
-        font-size: 24px;
-        font-weight: 800;
-        line-height: 1;
-      }
-      .card-val.muted {
-        color: #94a3b8;
-      }
-      .card-val.danger {
-        color: #dc2626;
-      }
-      .bulbs-and-chart {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1.8fr;
-        gap: 12px;
-        min-height: 0;
-      }
-      .bulb-card {
-        border: 3px solid #000;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 5px 5px 0 #000;
-        display: flex;
-        flex-direction: column;
-      }
-      .bulb-header {
-        padding: 9px 14px;
-        border-bottom: 3px solid #000;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-shrink: 0;
-        color: black;
-      }
-      .bulb-header .tag {
-        font-size: 9px;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-      }
-      .bulb-body {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        padding: 16px;
-        transition: background 0.4s;
-      }
-      .bulb-ring {
-        width: 110px;
-        height: 110px;
-        border-radius: 50%;
-        border: 4px solid #000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition:
-          background 0.5s,
-          box-shadow 0.5s;
-      }
-      .bulb-stats {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        width: 100%;
-      }
-      .bulb-stat {
-        background: #fff;
-        border: 2px solid #000;
-        border-radius: 8px;
-        padding: 9px 11px;
-      }
-      .bulb-stat-label {
-        font-size: 9px;
-        font-weight: 800;
-        text-transform: uppercase;
-        color: #64748b;
-      }
-      .bulb-stat-val {
-        font-size: 20px;
-        font-weight: 800;
-        color: #0f172a;
-        line-height: 1.2;
-      }
-      .bulb-stat-val.danger {
-        color: #dc2626;
-      }
-      .chart-card {
-        background: #fff;
-        border: 3px solid #000;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 5px 5px 0 #000;
-        color: #0f172a;
-        display: flex;
-        flex-direction: column;
-      }
-      .chart-header {
-        background: #f1f5f9;
-        border-bottom: 3px solid #000;
-        padding: 9px 16px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-shrink: 0;
-      }
-      .chart-title {
-        font-size: 9px;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #000;
-      }
-      .chart-legend {
-        display: flex;
-        gap: 10px;
-      }
-      .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 9px;
-        font-weight: 800;
-        text-transform: uppercase;
-        color: #000;
-      }
-      .legend-dot {
-        width: 9px;
-        height: 9px;
-        border-radius: 50%;
-        border: 1px solid #000;
-      }
-      .chart-body {
-        flex: 1;
-        padding: 12px;
-        min-height: 0;
-        position: relative;
-      }
-      .chart-body canvas {
-        position: absolute;
-        top: 12px;
-        left: 12px;
-        right: 12px;
-        bottom: 12px;
-        width: calc(100% - 24px) !important;
-        height: calc(100% - 24px) !important;
-      }
-      .log-card {
-        background: #1e293b;
-        border: 3px solid #000;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 4px 4px 0 #000;
-        display: flex;
-        flex-direction: column;
-        flex-shrink: 0;
-      }
-      .log-header {
-        background: #000;
-        color: #fff;
-        padding: 8px 16px;
-        flex-shrink: 0;
-      }
-      .log-header span {
-        font-size: 9px;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-      #event-log {
-        padding: 10px;
-        display: flex;
-        flex-direction: row;
-        gap: 10px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        scroll-behavior: smooth;
-      }
-      .log-item {
-        background: #fff;
-        border: 2px solid #000;
-        border-radius: 7px;
-        padding: 8px 11px;
-        display: flex;
-        gap: 9px;
-        align-items: flex-start;
-        flex: 0 0 auto;
-        min-width: 200px;
-        transform: translateX(100%);
-        opacity: 0;
-        animation: slideInRight 0.4s ease forwards;
-      }
-      @keyframes slideInRight {
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
-      }
-      .log-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        flex-shrink: 0;
-        margin-top: 3px;
-        border: 1px solid #000;
-      }
-      .log-dot.ok {
-        background: #4ade80;
-      }
-      .log-dot.alarm {
-        background: #ef4444;
-      }
-      .log-title {
-        font-size: 10px;
-        font-weight: 800;
-        color: #0f172a;
-        text-transform: uppercase;
-      }
-      .log-sub {
-        font-size: 9px;
-        color: #475569;
-        font-weight: 600;
-        margin-top: 1px;
-      }
-      .log-time {
-        font-size: 9px;
-        font-weight: 800;
-        color: #94a3b8;
-        margin-top: 3px;
-      }
-      #event-log::-webkit-scrollbar {
-        height: 8px;
-      }
-      #event-log::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 10px;
-      }
-      #event-log::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.4);
-        border-radius: 10px;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="pg-root">
-      <header>
-        <span class="logo">PowerGuard</span>
-        <div class="status-pill">
-          <span class="sdot"></span><span>System Active</span>
-        </div>
-      </header>
-      <main>
-        <div id="banner" class="ok">
-          <div class="icon-circle ok" id="banner-icon">
-            <svg
-              id="banner-svg"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="white"
-            >
-              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-            </svg>
-          </div>
-          <div>
-            <div id="banner-title" style="font-size: 14px">
-              No anomalies detected
-            </div>
-            <div
-              id="banner-sub"
-              style="font-size: 11px; font-weight: 600; opacity: 0.75"
-            >
-              All sensor readings within threshold
-            </div>
-          </div>
-        </div>
-        <div class="cards">
-          <div class="card">
-            <div class="card-label">S1 Total (mA)</div>
-            <div class="card-val" id="s1">-</div>
-          </div>
-          <div class="card">
-            <div class="card-label">S2 Legal (mA)</div>
-            <div class="card-val" id="s2">-</div>
-          </div>
-          <div class="card">
-            <div class="card-label">Stolen (S1−S2) mA</div>
-            <div class="card-val" id="delta">-</div>
-          </div>
-          <div class="card">
-            <div class="card-label">Alarm Threshold</div>
-            <div class="card-val muted">50</div>
-          </div>
-          <div class="card">
-            <div class="card-label">Status</div>
-            <div class="card-val" id="statuscard">OK</div>
-          </div>
-        </div>
-        <div class="bulbs-and-chart">
-          <div class="bulb-card">
-            <div
-              class="bulb-header"
-              id="legal-header"
-              style="background: #fef08a"
-            >
-              <div class="tag">Legal Consumption</div>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="#000">
-                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-              </svg>
-            </div>
-            <div class="bulb-body" id="legal-body" style="background: #f8fafc">
-              <div
-                class="bulb-ring"
-                id="legal-ring"
-                style="
-                  background: #fef08a;
-                  box-shadow:
-                    0 0 0 8px rgba(250, 224, 50, 0.3),
-                    0 0 0 16px rgba(250, 224, 50, 0.12);
-                "
-              >
-                <svg
-                  width="52"
-                  height="52"
-                  viewBox="0 0 24 24"
-                  id="legal-icon"
-                  fill="#000"
-                >
-                  <path
-                    d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.13 2 5 5.13 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.87-3.13-7-7-7z"
-                  />
-                </svg>
-              </div>
-              <div class="bulb-stats">
-                <div class="bulb-stat">
-                  <div class="bulb-stat-label">S1 Total</div>
-                  <div class="bulb-stat-val" id="s1b">-</div>
-                </div>
-                <div class="bulb-stat">
-                  <div class="bulb-stat-label">S2 Legal</div>
-                  <div class="bulb-stat-val" id="s2b">-</div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="bulb-card">
-            <div class="bulb-header" style="background: #fca5a5">
-              <div class="tag">Theft Detection</div>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="#000">
-                <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
-              </svg>
-            </div>
-            <div class="bulb-body" id="theft-body" style="background: #f8fafc">
-              <div
-                class="bulb-ring"
-                id="theft-ring"
-                style="background: #d1d5db; box-shadow: none"
-              >
-                <svg
-                  width="52"
-                  height="52"
-                  viewBox="0 0 24 24"
-                  id="theft-icon"
-                  fill="#6b7280"
-                >
-                  <path d="M7 2v11h3v9l7-12h-4l4-8z" />
-                </svg>
-              </div>
-              <div class="bulb-stats">
-                <div class="bulb-stat">
-                  <div class="bulb-stat-label">Stolen (mA)</div>
-                  <div class="bulb-stat-val danger" id="deltab">-</div>
-                </div>
-                <div class="bulb-stat">
-                  <div class="bulb-stat-label">Status</div>
-                  <div class="bulb-stat-val danger" id="statusb">-</div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="chart-card">
-            <div class="chart-header">
-              <span class="chart-title"
-                >Live Current — S1 Total / S2 Legal / Stolen</span
-              >
-              <div class="chart-legend">
-                <div class="legend-item">
-                  <div class="legend-dot" style="background: #378add"></div>
-                  S1
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot" style="background: #1d9e75"></div>
-                  S2
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot" style="background: #e24b4a"></div>
-                  Delta
-                </div>
-              </div>
-            </div>
-            <div class="chart-body"><canvas id="chart"></canvas></div>
-          </div>
-        </div>
-        <div class="log-card">
-          <div class="log-header"><span>Recent System Events</span></div>
-          <div id="event-log">
-            <div class="log-item">
-              <div class="log-dot ok"></div>
-              <div>
-                <div class="log-title">System Started</div>
-                <div class="log-sub">PowerGuard monitoring online.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>PowerGuard | ACS712 Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{overflow:hidden;width:100vw;height:100vh}
+.pg-root{font-family:"Plus Jakarta Sans",system-ui,sans-serif;background:#0f172a;color:#f8fafc;width:100vw;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Header ── */
+header{display:flex;justify-content:space-between;align-items:center;padding:8px 20px;background:#0f172a;border-bottom:3px solid #000;flex-shrink:0;gap:10px;flex-wrap:wrap}
+.logo{font-size:17px;font-weight:800;color:#fff;letter-spacing:-0.5px;text-transform:uppercase}
+.header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.status-pill{display:flex;align-items:center;gap:6px;background:#1e293b;border:2px solid #000;border-radius:999px;padding:4px 12px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.sdot{width:8px;height:8px;border-radius:50%;border:1px solid #000;background:#4ade80;transition:background .3s}
+
+.hdr-btn{background:#fff;border:2px solid #000;border-radius:7px;padding:4px 11px;font-size:10px;font-weight:800;cursor:pointer;color:#0f172a;text-transform:uppercase;letter-spacing:.06em;box-shadow:2px 2px 0 #000;transition:all .2s}
+.hdr-btn:hover{background:#f1f5f9;transform:translateY(-1px);box-shadow:3px 3px 0 #000}
+.export-btn{background:linear-gradient(135deg,#e9710e,#c73a02);border:2px solid #000;border-radius:8px;padding:6px 14px;font-size:10px;font-weight:800;cursor:pointer;color:#fff;text-transform:uppercase;letter-spacing:.06em;box-shadow:3px 3px 0 #000;display:flex;align-items:center;gap:6px;transition:all .2s}
+.export-btn:hover{background:linear-gradient(135deg,#0284c7,#0369a1);transform:translateY(-2px);box-shadow:4px 4px 0 #000}
+.export-btn svg{width:12px;height:12px}
+
+/* ── Main grid ── */
+main{flex:1;display:grid;grid-template-rows:auto auto 1fr auto;gap:10px;padding:10px 20px;overflow:hidden;min-height:0}
+
+/* ── Banner ── */
+#banner{border:3px solid #000;border-radius:10px;padding:10px 16px;display:flex;align-items:center;gap:12px;font-weight:800;font-size:12px;box-shadow:4px 4px 0 #000;transition:background .4s,color .4s}
+#banner.ok{background:#bbf7d0;color:#14532d}
+#banner.alarm{background:#fca5a5;color:#7f1d1d}
+#banner.init{background:#fef9c3;color:#854d0e}
+.icon-circle{width:34px;height:34px;border-radius:50%;border:2px solid #000;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .4s}
+.icon-circle.ok{background:#4ade80}
+.icon-circle.alarm{background:#ef4444}
+.icon-circle.init{background:#facc15}
+
+/* ── 7-card strip ── */
+.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.card{background:#fff;border:3px solid #000;border-radius:10px;padding:10px 12px;box-shadow:2px 2px 0 #000;color:#0f172a;position:relative;min-height:70px}
+.card-label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:3px}
+.card-val{font-size:20px;font-weight:800;line-height:1}
+.card-val.muted{color:#94a3b8}
+.card-val.danger{color:#dc2626}
+.card-val.green{color:#16a34a}
+.card-val.blue{color:#1d4ed8}
+
+/* Flip card */
+.flip-card{perspective:1000px;cursor:pointer}
+.flip-inner{transition:transform .5s;transform-style:preserve-3d;position:relative;width:100%;height:100%}
+.flip-card.flipped .flip-inner{transform:rotateY(180deg)}
+.flip-front,.flip-back{backface-visibility:hidden;-webkit-backface-visibility:hidden;position:absolute;inset:0;border-radius:7px;padding:10px 12px}
+.flip-back{transform:rotateY(180deg)}
+.flip-hint{position:absolute;bottom:4px;right:6px;font-size:8px;color:#94a3b8;font-weight:700;pointer-events:none}
+.delta-mode-row{display:flex;gap:4px;margin-top:5px}
+.dmode-btn{background:#fff;border:2px solid #000;border-radius:5px;padding:3px 7px;font-size:9px;font-weight:800;cursor:pointer;color:#0f172a;line-height:1}
+.dmode-btn.active{background:#0f172a;color:#fff}
+
+/* ── Bulbs + Chart ── */
+.bulbs-and-chart{display:grid;grid-template-columns:1fr 1fr 1.8fr;gap:10px;min-height:0}
+.bulb-card{border:3px solid #000;border-radius:10px;overflow:hidden;box-shadow:4px 4px 0 #000;display:flex;flex-direction:column}
+.bulb-header{padding:8px 12px;border-bottom:3px solid #000;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;color:#000}
+.bulb-header .tag{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}
+.flip-tab{font-size:8px;font-weight:800;background:#000;color:#fff;border-radius:4px;padding:2px 6px;cursor:pointer;border:none;letter-spacing:.05em}
+.flip-tab:hover{background:#334155}
+.bulb-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:12px;transition:background .4s}
+.bulb-ring{width:100px;height:100px;border-radius:50%;border:4px solid #000;display:flex;align-items:center;justify-content:center;transition:background .5s,box-shadow .5s}
+.bulb-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100%}
+.bulb-stat{background:#fff;border:2px solid #000;border-radius:8px;padding:7px 10px}
+.bulb-stat-label{font-size:9px;font-weight:800;text-transform:uppercase;color:#64748b}
+.bulb-stat-val{font-size:18px;font-weight:800;color:#0f172a;line-height:1.2}
+.bulb-stat-val.danger{color:#dc2626}
+
+/* Donut back panel */
+.donut-back{flex:1;background:#f8fafc;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:12px}
+.donut-wrap{position:relative;width:120px;height:120px}
+.donut-wrap canvas{width:120px!important;height:120px!important}
+.donut-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
+.donut-pct{font-size:22px;font-weight:800;color:#0f172a;line-height:1}
+.donut-sub{font-size:9px;color:#64748b;font-weight:700}
+.donut-meta{font-size:9px;color:#64748b;font-weight:700;text-align:center}
+
+/* Theft mini-log back panel */
+.mini-log-back{flex:1;background:#1e293b;display:flex;flex-direction:column;overflow:hidden}
+.mini-log-hdr{padding:6px 12px;font-size:9px;font-weight:800;text-transform:uppercase;color:#64748b;border-bottom:2px solid #000;flex-shrink:0}
+.mini-log-body{flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:4px}
+.mini-log-item{background:#fca5a5;border:1px solid #000;border-radius:5px;padding:5px 8px;color:#7f1d1d;font-size:9px;font-weight:700}
+.mini-log-item.ok{background:#bbf7d0;color:#14532d}
+
+/* Chart */
+.chart-card{background:#fff;border:3px solid #000;border-radius:10px;overflow:hidden;box-shadow:4px 4px 0 #000;color:#0f172a;display:flex;flex-direction:column}
+.chart-header{background:#f1f5f9;border-bottom:3px solid #000;padding:8px 14px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.chart-title{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#000}
+.chart-legend{display:flex;gap:8px}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:9px;font-weight:800;text-transform:uppercase;color:#000}
+.legend-dot{width:8px;height:8px;border-radius:50%;border:1px solid #000}
+.chart-body{flex:1;padding:10px;min-height:0;position:relative}
+.chart-body canvas{position:absolute;top:10px;left:10px;right:10px;bottom:10px;width:calc(100% - 20px)!important;height:calc(100% - 20px)!important}
+
+/* ── Bottom row ── */
+.bottom-row{display:grid;grid-template-columns:1fr auto;gap:10px;flex-shrink:0}
+
+/* Event log */
+.log-card{background:#1e293b;border:3px solid #000;border-radius:10px;overflow:hidden;box-shadow:3px 3px 0 #000;display:flex;flex-direction:column}
+.log-header{background:#000;color:#fff;padding:6px 14px;flex-shrink:0;display:flex;justify-content:space-between;align-items:center}
+.log-header span{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.log-header-btns{display:flex;gap:6px}
+.log-btn{font-size:9px;background:transparent;border:1px solid #555;color:#aaa;border-radius:4px;padding:2px 8px;cursor:pointer;font-weight:700}
+.log-btn:hover{background:#333}
+#event-log{padding:8px;display:flex;flex-direction:row;gap:8px;overflow-x:auto;overflow-y:hidden;scroll-behavior:smooth;min-height:62px}
+.log-item{background:#fff;border:2px solid #000;border-radius:7px;padding:7px 10px;display:flex;gap:8px;align-items:flex-start;flex:0 0 auto;min-width:190px;transform:translateX(100%);opacity:0;animation:slideIn .4s ease forwards}
+@keyframes slideIn{to{transform:translateX(0);opacity:1}}
+.log-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:3px;border:1px solid #000}
+.log-dot.ok{background:#4ade80}
+.log-dot.alarm{background:#ef4444}
+.log-dot.info{background:#60a5fa}
+.log-title{font-size:10px;font-weight:800;color:#0f172a;text-transform:uppercase}
+.log-sub{font-size:9px;color:#475569;font-weight:600;margin-top:1px}
+.log-time{font-size:9px;font-weight:800;color:#94a3b8;margin-top:2px}
+#event-log::-webkit-scrollbar{height:6px}
+#event-log::-webkit-scrollbar-track{background:rgba(255,255,255,.05);border-radius:10px}
+#event-log::-webkit-scrollbar-thumb{background:rgba(255,255,255,.4);border-radius:10px}
+
+/* Controls card */
+.ctrl-card{background:#1e293b;border:3px solid #000;border-radius:10px;padding:10px 14px;box-shadow:3px 3px 0 #000;display:flex;flex-direction:column;gap:8px;min-width:180px;flex-shrink:0}
+.ctrl-title{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#64748b;border-bottom:1px solid #334155;padding-bottom:5px;margin-bottom:2px}
+.ctrl-row{display:flex;align-items:center;gap:8px}
+.ctrl-label{font-size:10px;color:#94a3b8;font-weight:700;min-width:60px}
+input[type=range]{flex:1;accent-color:#4ade80;height:4px;cursor:pointer;border-radius:2px}
+.ctrl-val{font-size:10px;font-weight:800;color:#fff;min-width:42px;text-align:right}
+
+/* Toggle */
+.toggle{width:30px;height:16px;background:#334155;border-radius:8px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0;border:1px solid #000}
+.toggle.on{background:#4ade80}
+.toggle-knob{position:absolute;top:2px;left:2px;width:10px;height:10px;background:#fff;border-radius:50%;transition:left .2s;pointer-events:none}
+.toggle.on .toggle-knob{left:16px}
+.toggle-lbl{font-size:10px;color:#94a3b8;font-weight:700;min-width:24px}
+</style>
+</head>
+<body>
+<div class="pg-root">
+
+<!-- ═══ HEADER ═══ -->
+<header>
+  <span class="logo">⚡ PowerGuard</span>
+  <div class="header-right">
+    <div class="status-pill">
+      <span class="sdot" id="sdot"></span>
+      <span>System Active</span>
     </div>
-    <script>
-      const MAX = 40,
-        labels = [],
-        d1 = [],
-        d2 = [],
-        dd = [];
-      let t = 0,
-        lastStatus = "OK";
-      const myChart = new Chart(
-        document.getElementById("chart").getContext("2d"),
-        {
-          type: "line",
-          data: {
-            labels,
-            datasets: [
-              {
-                label: "S1",
-                data: d1,
-                borderColor: "#378ADD",
-                tension: 0.3,
-                pointRadius: 0,
-                fill: false,
-                borderWidth: 2,
-              },
-              {
-                label: "S2",
-                data: d2,
-                borderColor: "#1D9E75",
-                tension: 0.3,
-                pointRadius: 0,
-                fill: false,
-                borderWidth: 2,
-              },
-              {
-                label: "Delta",
-                data: dd,
-                borderColor: "#E24B4A",
-                tension: 0.3,
-                pointRadius: 0,
-                fill: false,
-                borderWidth: 2,
-                borderDash: [4, 3],
-              },
-            ],
-          },
-          options: {
-            animation: false,
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-              x: {
-                ticks: {
-                  maxTicksLimit: 5,
-                  font: { size: 9 },
-                  color: "#64748b",
-                },
-                grid: { color: "#e2e8f0" },
-              },
-              y: {
-                ticks: { font: { size: 9 }, color: "#64748b" },
-                grid: { color: "#e2e8f0" },
-              },
-            },
-            plugins: { legend: { display: false } },
-          },
-        },
-      );
+    <!-- Export CSV -->
+    <button class="export-btn" onclick="exportCSV()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      Export CSV
+    </button>
+  </div>
+</header>
 
-      function setAlarmState(isAlarm) {
-        const lRing = document.getElementById("legal-ring");
-        const lBody = document.getElementById("legal-body");
-        const lIcon = document.getElementById("legal-icon");
-        const tRing = document.getElementById("theft-ring");
-        const tBody = document.getElementById("theft-body");
-        const tIcon = document.getElementById("theft-icon");
-        const banner = document.getElementById("banner");
-        const bicon = document.getElementById("banner-icon");
-        const bsvg = document.getElementById("banner-svg");
-        const sc = document.getElementById("statuscard");
-        if (isAlarm) {
-          lRing.style.cssText = "background:#334155;box-shadow:none;";
-          lBody.style.background = "#1e293b";
-          lIcon.setAttribute("fill", "#475569");
-          tRing.style.cssText =
-            "background:#ff0000;box-shadow:0 0 0 8px rgba(255,0,0,0.3),0 0 0 18px rgba(255,0,0,0.15);";
-          tBody.style.background = "#fff1f1";
-          tIcon.setAttribute("fill", "#fff");
-          banner.className = "alarm";
-          bicon.className = "icon-circle alarm";
-          bsvg.innerHTML =
-            '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>';
-          document.getElementById("banner-title").textContent =
-            "Anomalous Activity Detected!";
-          document.getElementById("banner-sub").textContent =
-            "Delta exceeded threshold — possible tampering.";
-          sc.style.color = "#dc2626";
-          sc.textContent = "ALARM";
-        } else {
-          lRing.style.cssText =
-            "background:#fef08a;box-shadow:0 0 0 8px rgba(250,224,50,0.3),0 0 0 16px rgba(250,224,50,0.12);";
-          lBody.style.background = "#f8fafc";
-          lIcon.setAttribute("fill", "#000");
-          tRing.style.cssText = "background:#d1d5db;box-shadow:none;";
-          tBody.style.background = "#f8fafc";
-          tIcon.setAttribute("fill", "#6b7280");
-          banner.className = "ok";
-          bicon.className = "icon-circle ok";
-          bsvg.innerHTML =
-            '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>';
-          document.getElementById("banner-title").textContent =
-            "No anomalies detected";
-          document.getElementById("banner-sub").textContent =
-            "All sensor readings within threshold";
-          sc.style.color = "#16a34a";
-          sc.textContent = "OK";
-        }
+<!-- ═══ MAIN ═══ -->
+<main>
+
+  <!-- Banner -->
+  <div id="banner" class="ok">
+    <div class="icon-circle ok" id="banner-icon">
+      <svg id="banner-svg" width="16" height="16" viewBox="0 0 24 24" fill="white">
+        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+      </svg>
+    </div>
+    <div>
+      <div id="banner-title" style="font-size:13px">No anomalies detected</div>
+      <div id="banner-sub" style="font-size:10px;font-weight:600;opacity:.75">All sensor readings within threshold</div>
+    </div>
+    <div style="margin-left:auto;font-size:10px;opacity:.55" id="banner-time">—</div>
+  </div>
+
+  <!-- 7-card strip -->
+  <div class="cards">
+
+    <!-- S1: flips to wattage -->
+    <div class="card flip-card" onclick="this.classList.toggle('flipped')">
+      <div class="flip-inner">
+        <div class="flip-front" style="background:#fff">
+          <div class="card-label">S1 Total (mA)</div>
+          <div class="card-val" id="s1">—</div>
+          <span class="flip-hint">↻ flip</span>
+        </div>
+        <div class="flip-back" style="background:#eff6ff">
+          <div class="card-label">S1 Total (W)</div>
+          <div class="card-val blue" id="s1w">—</div>
+          <span class="flip-hint">↻ flip</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- S2: flips to wattage -->
+    <div class="card flip-card" onclick="this.classList.toggle('flipped')">
+      <div class="flip-inner">
+        <div class="flip-front" style="background:#fff">
+          <div class="card-label">S2 Legal (mA)</div>
+          <div class="card-val green" id="s2">—</div>
+          <span class="flip-hint">↻ flip</span>
+        </div>
+        <div class="flip-back" style="background:#f0fdf4">
+          <div class="card-label">S2 Legal (W)</div>
+          <div class="card-val" style="color:#166534" id="s2w">—</div>
+          <span class="flip-hint">↻ flip</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delta: flips to % / raw switch -->
+    <div class="card flip-card" onclick="this.classList.toggle('flipped')">
+      <div class="flip-inner">
+        <div class="flip-front" style="background:#fff">
+          <div class="card-label">Stolen (S1−S2) mA</div>
+          <div class="card-val danger" id="delta">—</div>
+          <span class="flip-hint">↻ flip</span>
+        </div>
+        <div class="flip-back" style="background:#fff7ed">
+          <div class="card-label" id="deltaFlipLabel">Stolen %</div>
+          <div class="card-val" style="color:#c2410c" id="deltaPct">—</div>
+          <!-- Stop flip propagation on the mode buttons -->
+          <div class="delta-mode-row" onclick="event.stopPropagation()">
+            <button class="dmode-btn active" id="btnPct" onclick="setDeltaMode('pct')">%</button>
+            <button class="dmode-btn" id="btnRaw" onclick="setDeltaMode('raw')">mA</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Threshold -->
+    <div class="card">
+      <div class="card-label">Alarm Threshold</div>
+      <div class="card-val muted" id="threshCard">50</div>
+    </div>
+
+    <!-- Status -->
+    <div class="card">
+      <div class="card-label">Status</div>
+      <div class="card-val green" id="statuscard">OK</div>
+    </div>
+
+  </div><!-- /cards -->
+
+  <!-- Bulbs + Chart -->
+  <div class="bulbs-and-chart">
+
+    <!-- Legal bulb — flips to power gauge donut -->
+    <div class="bulb-card">
+      <div class="bulb-header" id="legal-header" style="background:#fef08a">
+        <div class="tag">Legal Consumption</div>
+        <button class="flip-tab" onclick="toggleBulb('legal')">FLIP ↻</button>
+      </div>
+      <!-- Front -->
+      <div class="bulb-body" id="legal-front" style="background:#f8fafc">
+        <div class="bulb-ring" id="legal-ring" style="background:#fef08a;box-shadow:0 0 0 8px rgba(250,224,50,.3),0 0 0 16px rgba(250,224,50,.12)">
+          <svg width="46" height="46" viewBox="0 0 24 24" id="legal-icon" fill="#000">
+            <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.13 2 5 5.13 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.87-3.13-7-7-7z"/>
+          </svg>
+        </div>
+        <div class="bulb-stats">
+          <div class="bulb-stat"><div class="bulb-stat-label">S1 Total</div><div class="bulb-stat-val" id="s1b">—</div></div>
+          <div class="bulb-stat"><div class="bulb-stat-label">S2 Legal</div><div class="bulb-stat-val" id="s2b">—</div></div>
+        </div>
+      </div>
+      <!-- Back: power gauge donut -->
+      <div class="donut-back" id="legal-back" style="display:none">
+        <div class="donut-wrap">
+          <canvas id="donutChart"></canvas>
+          <div class="donut-center">
+            <div class="donut-pct" id="gaugePct">0%</div>
+            <div class="donut-sub">legal</div>
+          </div>
+        </div>
+        <div class="donut-meta">S1=<span id="gs1">0</span>mA · S2=<span id="gs2">0</span>mA</div>
+        <div class="donut-meta" style="color:#dc2626" id="gaugeStolen"></div>
+      </div>
+    </div>
+
+    <!-- Theft bulb — flips to mini alarm log -->
+    <div class="bulb-card">
+      <div class="bulb-header" style="background:#fca5a5">
+        <div class="tag">Theft Detection</div>
+        <button class="flip-tab" onclick="toggleBulb('theft')">FLIP ↻</button>
+      </div>
+      <!-- Front -->
+      <div class="bulb-body" id="theft-front" style="background:#f8fafc">
+        <div class="bulb-ring" id="theft-ring" style="background:#d1d5db;box-shadow:none">
+          <svg width="46" height="46" viewBox="0 0 24 24" id="theft-icon" fill="#6b7280">
+            <path d="M7 2v11h3v9l7-12h-4l4-8z"/>
+          </svg>
+        </div>
+        <div class="bulb-stats">
+          <div class="bulb-stat"><div class="bulb-stat-label">Stolen (mA)</div><div class="bulb-stat-val danger" id="deltab">—</div></div>
+          <div class="bulb-stat"><div class="bulb-stat-label">Status</div><div class="bulb-stat-val danger" id="statusb">—</div></div>
+        </div>
+      </div>
+      <!-- Back: mini alarm log -->
+      <div class="mini-log-back" id="theft-back" style="display:none">
+        <div class="mini-log-hdr">Recent Alarm Events</div>
+        <div class="mini-log-body" id="miniLog">
+          <div style="font-size:9px;color:#475569;padding:4px">No alarms recorded yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live chart -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <span class="chart-title">Live Current — S1 Total / S2 Legal / Stolen</span>
+        <div class="chart-legend">
+          <div class="legend-item"><div class="legend-dot" style="background:#378add"></div>S1</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#1d9e75"></div>S2</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#e24b4a"></div>Δ</div>
+        </div>
+      </div>
+      <div class="chart-body"><canvas id="chart"></canvas></div>
+    </div>
+
+  </div><!-- /bulbs-and-chart -->
+
+  <!-- Bottom row: persistent log + controls -->
+  <div class="bottom-row">
+
+    <!-- Persistent event log -->
+    <div class="log-card">
+      <div class="log-header">
+        <span>System Event Log</span>
+        <div class="log-header-btns">
+          <button class="log-btn" onclick="exportLog()">Export</button>
+          <button class="log-btn" onclick="clearLog()">Clear</button>
+        </div>
+      </div>
+      <div id="event-log">
+        <div class="log-item">
+          <div class="log-dot info"></div>
+          <div>
+            <div class="log-title">System Started</div>
+            <div class="log-sub">PowerGuard monitoring online.</div>
+            <div class="log-time" id="startTime"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls: threshold slider + sound toggle + buzzer -->
+    <div class="ctrl-card">
+      <div class="ctrl-title">Controls</div>
+
+      <!-- Threshold slider -->
+      <div class="ctrl-row">
+        <span class="ctrl-label">Threshold</span>
+        <input type="range" id="threshSlider" min="10" max="500" value="50" step="1" oninput="setThresh(this.value)" aria-label="Alarm threshold in milliamps"/>
+        <span class="ctrl-val" id="threshVal">50mA</span>
+      </div>
+
+      <!-- Sound alert toggle -->
+      <div class="ctrl-row">
+        <span class="ctrl-label">Sound Alert</span>
+        <div class="toggle on" id="soundToggle" onclick="toggleSound()">
+          <div class="toggle-knob"></div>
+        </div>
+        <span class="toggle-lbl" id="soundLbl">ON</span>
+      </div>
+
+
+    </div>
+
+  </div><!-- /bottom-row -->
+
+</main><!-- /main -->
+
+<script>
+/* ── State ── */
+const MAX = 40;
+const labels = [], d1 = [], d2 = [], dd = [];
+let t = 0, lastStatus = 'OK';
+let soundOn = true;
+let deltaMode = 'pct';
+let currentThresh = 50;
+let csvRows = [['timestamp','s1_mA','s2_mA','delta_mA','s1_W','s2_W','status']];
+
+/* Persistent log — survives page reload */
+const LOG_KEY = 'pg_event_log_v2';
+let storedLog = [];
+try { const s = localStorage.getItem(LOG_KEY); if (s) storedLog = JSON.parse(s); } catch(e) {}
+
+document.getElementById('startTime').textContent = new Date().toLocaleTimeString();
+
+/* ── Line chart ── */
+const myChart = new Chart(document.getElementById('chart').getContext('2d'), {
+  type: 'line',
+  data: { labels, datasets: [
+    { label:'S1', data:d1, borderColor:'#378ADD', tension:.3, pointRadius:0, fill:false, borderWidth:2 },
+    { label:'S2', data:d2, borderColor:'#1D9E75', tension:.3, pointRadius:0, fill:false, borderWidth:2 },
+    { label:'Delta', data:dd, borderColor:'#E24B4A', tension:.3, pointRadius:0, fill:false, borderWidth:2, borderDash:[4,3] },
+  ]},
+  options: { animation:false, responsive:true, maintainAspectRatio:false,
+    scales: {
+      x: { ticks:{ maxTicksLimit:5, font:{size:9}, color:'#64748b' }, grid:{color:'#e2e8f0'} },
+      y: { ticks:{ font:{size:9}, color:'#64748b' }, grid:{color:'#e2e8f0'} }
+    },
+    plugins: { legend:{ display:false } }
+  }
+});
+
+/* ── Donut / Power Gauge ── */
+let donutChart = null;
+(function initDonut() {
+  const ctx = document.getElementById('donutChart').getContext('2d');
+  donutChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: { datasets:[{ data:[0,100],
+      backgroundColor:['#1d9e75','#f1f5f9'],
+      borderColor:['#000','#000'], borderWidth:1 }] },
+    options: { animation:false, responsive:false, cutout:'65%',
+      plugins:{ legend:{display:false}, tooltip:{enabled:false} } }
+  });
+})();
+
+function updateDonut(s1, s2) {
+  if (!donutChart) return;
+  const pct = s1 > 0 ? Math.round(s2 / s1 * 100) : 0;
+  const stolen = 100 - pct;
+  donutChart.data.datasets[0].data = [Math.max(0,pct), Math.max(0,stolen)];
+  donutChart.data.datasets[0].backgroundColor = stolen > 20 ? ['#1d9e75','#ef4444'] : ['#1d9e75','#f1f5f9'];
+  donutChart.update();
+  document.getElementById('gaugePct').textContent = pct + '%';
+  document.getElementById('gs1').textContent = s1;
+  document.getElementById('gs2').textContent = s2;
+  document.getElementById('gaugeStolen').textContent = stolen > 0 ? 'Stolen: ' + (s1 - s2) + 'mA (' + stolen + '%)' : '';
+}
+
+/* ── Delta mode switch ── */
+function setDeltaMode(m) {
+  deltaMode = m;
+  document.getElementById('btnPct').classList.toggle('active', m === 'pct');
+  document.getElementById('btnRaw').classList.toggle('active', m === 'raw');
+  document.getElementById('deltaFlipLabel').textContent = m === 'pct' ? 'Stolen %' : 'Stolen (mA)';
+}
+
+/* ── Threshold slider ── */
+function setThresh(v) {
+  currentThresh = parseInt(v);
+  document.getElementById('threshVal').textContent = v + 'mA';
+  document.getElementById('threshCard').textContent = v;
+  fetch('/api/threshold', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ threshold: parseInt(v) })
+  }).catch(() => {});
+}
+
+/* ── Sound alert ── */
+function toggleSound() {
+  soundOn = !soundOn;
+  document.getElementById('soundToggle').classList.toggle('on', soundOn);
+  document.getElementById('soundLbl').textContent = soundOn ? 'ON' : 'OFF';
+  addLog('info', 'Sound Alert', soundOn ? 'Audio alerts enabled' : 'Audio alerts muted');
+}
+
+function playBeep() {
+  if (!soundOn) return;
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = 'sine';
+    osc.frequency.value = 1000;
+    
+    // Create blinking effect - 150ms on, 150ms off for 3 seconds
+    const duration = 3.0;
+    const blinkPeriod = 0.3; // 150ms on + 150ms off
+    const blinkCount = Math.ceil(duration / blinkPeriod);
+    
+    for (let i = 0; i < blinkCount; i++) {
+      const startTime = ac.currentTime + (i * blinkPeriod);
+      const onDuration = 0.15;
+      if (startTime < ac.currentTime + duration) {
+        gain.gain.setValueAtTime(0.4, startTime);
+        gain.gain.setValueAtTime(0, startTime + onDuration);
       }
+    }
+    
+    osc.start(); 
+    osc.stop(ac.currentTime + duration);
+    setTimeout(() => ac.close(), (duration * 1000) + 100);
+  } catch(e) {}
+}
 
-      function addLog(type, title, sub) {
-        const log = document.getElementById("event-log");
-        const now = new Date().toLocaleTimeString();
-        const div = document.createElement("div");
-        div.className = "log-item";
-        div.innerHTML =
-          '<div class="log-dot ' +
-          type +
-          '"></div><div><div class="log-title">' +
-          title +
-          '</div><div class="log-sub">' +
-          sub +
-          '</div><div class="log-time">' +
-          now +
-          "</div></div>";
-        log.appendChild(div);
-        log.scrollLeft = log.scrollWidth;
-      }
 
-      async function poll() {
-        try {
-          const d = await fetch("/data").then((r) => r.json());
-          document.getElementById("s1").textContent = d.s1;
-          document.getElementById("s2").textContent = d.s2;
-          document.getElementById("delta").textContent = d.delta;
-          document.getElementById("s1b").textContent = d.s1;
-          document.getElementById("s2b").textContent = d.s2;
-          document.getElementById("deltab").textContent = d.delta;
-          document.getElementById("statusb").textContent = d.status;
-          const isAlarm = d.status === "ALARM";
-          if (isAlarm !== (lastStatus === "ALARM")) {
-            setAlarmState(isAlarm);
-            addLog(
-              isAlarm ? "alarm" : "ok",
-              isAlarm ? "THEFT ALERT" : "STATUS CLEARED",
-              isAlarm
-                ? "Stolen current: " +
-                    (d.s1 - d.s2) +
-                    " mA (S1=" +
-                    d.s1 +
-                    " S2=" +
-                    d.s2 +
-                    ")"
-                : "Readings back within normal range.",
-            );
-          }
-          lastStatus = d.status;
-          if (labels.length >= MAX) {
-            labels.shift();
-            d1.shift();
-            d2.shift();
-            dd.shift();
-          }
-          labels.push(t++);
-          d1.push(d.s1);
-          d2.push(d.s2);
-          dd.push(d.delta);
-          myChart.update();
-        } catch (e) {
-          console.warn("Poll error:", e);
-        }
-      }
 
-      setAlarmState(false);
-      setInterval(poll, 1000);
-      poll();
-    </script>
-  </body>
+/* ── Bulb flip ── */
+function toggleBulb(side) {
+  if (side === 'legal') {
+    const front = document.getElementById('legal-front');
+    const back  = document.getElementById('legal-back');
+    const showing = back.style.display === 'flex';
+    front.style.display = showing ? 'flex' : 'none';
+    back.style.display  = showing ? 'none' : 'flex';
+  } else {
+    const front = document.getElementById('theft-front');
+    const back  = document.getElementById('theft-back');
+    const showing = back.style.display === 'flex';
+    front.style.display = showing ? 'flex'  : 'none';
+    back.style.display  = showing ? 'none'  : 'flex';
+  }
+}
+
+/* ── Alarm state ── */
+function setAlarmState(isAlarm) {
+  const lRing  = document.getElementById('legal-ring');
+  const lIcon  = document.getElementById('legal-icon');
+  const tRing  = document.getElementById('theft-ring');
+  const tIcon  = document.getElementById('theft-icon');
+  const banner = document.getElementById('banner');
+  const bicon  = document.getElementById('banner-icon');
+  const bsvg   = document.getElementById('banner-svg');
+  const sc     = document.getElementById('statuscard');
+  const sdot   = document.getElementById('sdot');
+
+  if (isAlarm) {
+    lRing.style.cssText = 'background:#334155;box-shadow:none;';
+    lIcon.setAttribute('fill','#475569');
+    tRing.style.cssText = 'background:#ff0000;box-shadow:0 0 0 8px rgba(255,0,0,.3),0 0 0 18px rgba(255,0,0,.15);';
+    tIcon.setAttribute('fill','#fff');
+    banner.className = 'alarm';
+    bicon.className  = 'icon-circle alarm';
+    bsvg.innerHTML   = '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>';
+    document.getElementById('banner-title').textContent = 'Anomalous Activity Detected!';
+    document.getElementById('banner-sub').textContent   = 'Delta exceeded threshold — possible tampering.';
+    sc.style.color = '#dc2626'; sc.textContent = 'ALARM';
+    sdot.style.background = '#ef4444';
+    playBeep();
+  } else {
+    lRing.style.cssText = 'background:#fef08a;box-shadow:0 0 0 8px rgba(250,224,50,.3),0 0 0 16px rgba(250,224,50,.12);';
+    lIcon.setAttribute('fill','#000');
+    tRing.style.cssText = 'background:#d1d5db;box-shadow:none;';
+    tIcon.setAttribute('fill','#6b7280');
+    banner.className = 'ok';
+    bicon.className  = 'icon-circle ok';
+    bsvg.innerHTML   = '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>';
+    document.getElementById('banner-title').textContent = 'No anomalies detected';
+    document.getElementById('banner-sub').textContent   = 'All sensor readings within threshold';
+    sc.style.color = '#16a34a'; sc.textContent = 'OK';
+    sdot.style.background = '#4ade80';
+  }
+}
+
+/* ── Event log ── */
+function addLog(type, title, sub) {
+  const now = new Date().toLocaleTimeString();
+  const entry = { type, title, sub, time: now, ts: Date.now() };
+  storedLog.push(entry);
+  if (storedLog.length > 200) storedLog.shift();
+  try { localStorage.setItem(LOG_KEY, JSON.stringify(storedLog.slice(-100))); } catch(e) {}
+  renderLogItem(entry);
+  // Also push to mini alarm log
+  if (type === 'alarm' || type === 'ok') {
+    const ml = document.getElementById('miniLog');
+    if (ml.children.length === 1 && ml.children[0].tagName !== 'DIV'.toUpperCase().charAt(0) + 'IV'.toLowerCase()) {
+      ml.innerHTML = '';
+    }
+    const d = document.createElement('div');
+    d.className = 'mini-log-item ' + (type === 'ok' ? 'ok' : '');
+    d.textContent = (type === 'alarm' ? '⚠ ' : '✓ ') + title + ' · ' + now;
+    ml.appendChild(d);
+    ml.scrollTop = ml.scrollHeight;
+  }
+}
+
+function renderLogItem(entry) {
+  const log = document.getElementById('event-log');
+  const div = document.createElement('div');
+  div.className = 'log-item';
+  div.innerHTML =
+    '<div class="log-dot ' + entry.type + '"></div>' +
+    '<div>' +
+      '<div class="log-title">' + entry.title + '</div>' +
+      '<div class="log-sub">' + entry.sub + '</div>' +
+      '<div class="log-time">' + entry.time + '</div>' +
+    '</div>';
+  log.appendChild(div);
+  log.scrollLeft = log.scrollWidth;
+}
+
+function clearLog() {
+  storedLog = [];
+  try { localStorage.removeItem(LOG_KEY); } catch(e) {}
+  document.getElementById('event-log').innerHTML = '';
+  addLog('info', 'Log Cleared', 'Event log has been reset.');
+}
+
+function exportLog() {
+  const lines = storedLog.map(e => [e.time, e.type.toUpperCase(), e.title, e.sub].join('\t')).join('\n');
+  const blob = new Blob(['TIME\tTYPE\tEVENT\tDETAIL\n' + lines], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'powerguard_log_' + Date.now() + '.txt';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Restore persisted log entries (last 10)
+storedLog.slice(-10).forEach(e => renderLogItem(e));
+
+/* ── CSV export ── */
+function exportCSV() {
+  const content = csvRows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([content], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'powerguard_data_' + Date.now() + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  addLog('info', 'CSV Exported', (csvRows.length - 1) + ' data records saved.');
+}
+
+/* ── Main UI updater ── */
+function updateUI(d) {
+  const s1    = d.s1    || 0;
+  const s2    = d.s2    || 0;
+  const delta = d.delta || 0;
+  const s1w   = d.s1_W  || 0;
+  const s2w   = d.s2_W  || 0;
+  const status = d.status || 'OK';
+  const pct = s1 > 0 ? Math.round(delta / s1 * 100) : 0;
+
+  // Cards
+  document.getElementById('s1').textContent    = s1;
+  document.getElementById('s2').textContent    = s2;
+  document.getElementById('delta').textContent = delta;
+  document.getElementById('s1w').textContent   = s1w.toFixed(1) + 'W';
+  document.getElementById('s2w').textContent   = s2w.toFixed(1) + 'W';
+  document.getElementById('deltaPct').textContent = deltaMode === 'pct' ? pct + '%' : delta + 'mA';
+  document.getElementById('banner-time').textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+  // Bulbs
+  document.getElementById('s1b').textContent    = s1;
+  document.getElementById('s2b').textContent    = s2;
+  document.getElementById('deltab').textContent = delta;
+  document.getElementById('statusb').textContent = status;
+
+  // Donut
+  updateDonut(s1, s2);
+
+  // Alarm transition
+  const isAlarm = status === 'ALARM';
+  if (isAlarm !== (lastStatus === 'ALARM')) {
+    setAlarmState(isAlarm);
+    addLog(
+      isAlarm ? 'alarm' : 'ok',
+      isAlarm ? 'THEFT ALERT' : 'STATUS CLEARED',
+      isAlarm
+        ? 'Stolen: ' + delta + 'mA (S1=' + s1 + ' S2=' + s2 + ')'
+        : 'Readings back within normal range.'
+    );
+  }
+  lastStatus = status;
+
+  // Chart
+  if (labels.length >= MAX) { labels.shift(); d1.shift(); d2.shift(); dd.shift(); }
+  labels.push(t++); d1.push(s1); d2.push(s2); dd.push(delta);
+  myChart.update();
+
+  // CSV buffer
+  csvRows.push([new Date().toISOString(), s1, s2, delta, s1w, s2w, status]);
+  if (csvRows.length > 3601) csvRows.splice(1, 1); // keep ~1hr at 1Hz
+}
+
+/* ── Polling ── */
+async function poll() {
+  try {
+    const d = await fetch('/api/state').then(r => r.json());
+    updateUI(d);
+  } catch(e) {
+    console.error('API error:', e);
+  }
+}
+
+/* ── Bootstrap ── */
+setAlarmState(false);
+
+// Pre-populate chart from server history on page load
+async function init() {
+  try {
+    const d = await fetch('/api/state').then(r => r.json());
+    // Replay history into chart so refresh doesn't wipe it
+    if (d.history && d.history.length) {
+      d.history.forEach(h => {
+        if (labels.length >= MAX) { labels.shift(); d1.shift(); d2.shift(); dd.shift(); }
+        labels.push(t++);
+        d1.push(h.s1);
+        d2.push(h.s2);
+        dd.push(h.delta);
+      });
+      myChart.update();
+    }
+    updateUI(d);
+  } catch(e) { console.error('Init error:', e); }
+}
+
+setInterval(poll, 1000);
+init();
+</script>
+</body>
 </html>

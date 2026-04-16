@@ -8,18 +8,12 @@ import serial.tools.list_ports
 from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 
-# ── Config ────────────────────────────────────────────────────
-# REMOVED: adc_to_ma() conversion — the firmware now does it.
-#          Python receives milliamps directly on the DATA line.
-#
-# CHANGED: NOISE_FLOOR_MA 150 → 50
-#          Must match firmware MIN_CURRENT_MA (default 50).
-#          The old 150 mA floor was silently zeroing real small loads.
-ALARM_MA        = 50     # stolen mA threshold to trigger alarm
-ALARM_HITS      = 3       # consecutive reads above threshold to arm alarm
-CLEAR_HITS      = 5       # consecutive reads below threshold to clear alarm
-NOISE_FLOOR_MA  = 50.0    # ignore readings below this (matches firmware MIN_CURRENT_MA)
+ALARM_MA        = 30     
+ALARM_HITS      = 3
+CLEAR_HITS      = 5
+NOISE_FLOOR_MA  = 20.0   
 BAUD_RATE       = 115200
+VOLTAGE_V       = 230.0  # Assumed voltage for watts calculation (120V US, 230V EU)
 
 # ── Shared state ──────────────────────────────────────────────
 state = {
@@ -29,6 +23,7 @@ state = {
     "connected": False,
     "last_update": 0.0,
     "history": [],
+    "threshold": ALARM_MA,
 }
 lock = threading.Lock()
 _ser = None
@@ -36,7 +31,7 @@ _ser = None
 # ── Moving average buffers ─────────────────────────────────────
 _ma1 = deque([0.0] * 8, maxlen=8)
 _ma2 = deque([0.0] * 8, maxlen=8)
-_s2_zero_start_time = None  # Track when S2 first becomes 0
+
 # ─────────────────────────────────────────────────────────────
 def process(s1_ma: float, s2_ma: float, s1_w: float = 0.0, s2_w: float = 0.0):
     """
@@ -60,17 +55,8 @@ def process(s1_ma: float, s2_ma: float, s1_w: float = 0.0, s2_w: float = 0.0):
     if s1 == 0.0:
         s2 = 0.0
 
-    # Track if S2 = 0 for 7+ seconds — if so, zero S1 too (sensor malfunction)
-    if s2 == 0.0:
-        if _s2_zero_start_time is None:
-            _s2_zero_start_time = time.time()  # Mark when S2 first became 0
-        elif time.time() - _s2_zero_start_time >= 7.0:
-            s1 = 0.0  # If S2 has been 0 for 7+ seconds, something is wrong
-    else:
-        _s2_zero_start_time = None  # Reset when S2 is non-zero
-
     delta = max(0, int(s1) - int(s2))
-    theft = (delta >= ALARM_MA) and (s1 >= NOISE_FLOOR_MA)
+    theft = (delta >= state.get("threshold", ALARM_MA)) and (s1 >= NOISE_FLOOR_MA)
 
     with lock:
         state["s1"]          = int(s1)
@@ -200,7 +186,15 @@ def serial_thread(port):
                                 state["status"] = "OK"
                 
                 elif line.startswith("DATA,") and not calibrated:
-                    print("[DEBUG] DATA line received but not calibrated yet — ignoring")
+                    # ESP32 already calibrated before Python connected — treat as calibrated
+                    print("[INFO] Missed CAL:BASELINE — auto-recovering from DATA line")
+                    calibrated = True
+                    result = _parse_data_line(line)
+                    if result:
+                        process(*result)
+                        with lock:
+                            if state["status"] == "CAL":
+                                state["status"] = "OK"
 
                 # ── Fallback: legacy RAW line (ADC counts) ─────────────
                 # Kept so the server still works if you flash older firmware.
@@ -217,7 +211,10 @@ def serial_thread(port):
                                 return (c * ADC_LSB_mV / 1000.0 / SENSITIVITY) * 1000.0
                             s1 = _adc_to_ma(float(parts[1]))
                             s2 = _adc_to_ma(float(parts[2]))
-                            process(s1, s2)
+                            # Calculate watts: Watts = Voltage × (mA / 1000)
+                            s1_w = (VOLTAGE_V * s1) / 1000.0
+                            s2_w = (VOLTAGE_V * s2) / 1000.0
+                            process(s1, s2, s1_w, s2_w)
                             if state["status"] == "CAL":
                                 with lock:
                                     state["status"] = "OK"
@@ -256,7 +253,7 @@ def api_state():
 @app.route("/data")
 def data():
     with lock:
-        return jsonify({k: state[k] for k in ("s1", "s2", "delta", "status")})
+        return jsonify({k: state[k] for k in ("s1", "s2", "delta", "s1_W", "s2_W", "status")})
 
 @app.route("/api/recal", methods=["POST"])
 def api_recal():
@@ -274,6 +271,21 @@ def api_recal():
 def api_buzz(on):
     _buzz(bool(on))
     return jsonify({"ok": True})
+
+@app.route("/api/threshold", methods=["POST"])
+def api_threshold():
+    """Set the alarm threshold (adaptive threshold in mA)."""
+    from flask import request
+    try:
+        data = request.get_json()
+        threshold = int(data.get("threshold", ALARM_MA))
+        # Clamp to reasonable range: 10-500 mA
+        threshold = max(10, min(500, threshold))
+        with lock:
+            state["threshold"] = threshold
+        return jsonify({"ok": True, "threshold": threshold})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 
 
 # ── Serial port auto-detection ─────────────────────────────────
